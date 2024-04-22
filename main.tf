@@ -26,32 +26,27 @@ resource "aws_s3_bucket" "terraform_state_bucket" {
   force_destroy = true
 }
 
-# ec2 
-resource "aws_vpc" "VPC_obs" {
-  cidr_block = "10.16.0.0/16"
+# vpc 
+resource "aws_default_vpc" "VPC_obs" {
 
   tags = {
-    Name = "VPC_obs"
+    Name = "default vpc"
   }
 }
 
-resource "aws_subnet" "subnet_1a" {
-  vpc_id            = aws_vpc.VPC_obs.id
-  cidr_block        = "10.16.10.0/24"
-  availability_zone = "us-east-1a"
+# create default subnet if one does not exit
+resource "aws_default_subnet" "default_az1" {
+  availability_zone = data.aws_availability_zones.available_zones.names[0]
 
   tags = {
-    Name = "subnet_1a"
+    Name = "default subnet 1"
   }
 }
-
-resource "aws_subnet" "subnet_1b" {
-  vpc_id            = aws_vpc.VPC_obs.id
-  cidr_block        = "10.16.11.0/24"
-  availability_zone = "us-east-1b"
+resource "aws_default_subnet" "default_az2" {
+  availability_zone = data.aws_availability_zones.available_zones.names[1]
 
   tags = {
-    Name = "subnet_1b"
+    Name = "default subnet 2"
   }
 }
 
@@ -59,7 +54,7 @@ resource "aws_subnet" "subnet_1b" {
 resource "aws_security_group" "ec2_sg" {
   name        = "ec2 security group"
   description = "allow access on ports 80 and 22"
-  vpc_id      = aws_vpc.VPC_obs.id
+  vpc_id      =  aws_default_vpc.default_vpc.id
 
   ingress {
     description = "ssh access"
@@ -84,7 +79,7 @@ resource "aws_security_group" "ec2_sg" {
 resource "aws_security_group" "ec2_sg_Nodes" {
   name        = "ec2 security group nodes"
   description = "allow access on ports 80 and 22 on server Nodes"
-  vpc_id      = aws_vpc.VPC_obs.id
+  vpc_id      = aws_default_vpc.default_vpc.id
 
   ingress {
     description = "http access"
@@ -131,7 +126,7 @@ data "aws_ami" "amazon_linux_2" {
 resource "aws_instance" "controller_instance" {
   ami           = data.aws_ami.amazon_linux_2.id # replace with your AMI ID
   instance_type = "t2.micro"
-  subnet_id     = aws_subnet.subnet_1a.id
+  subnet_id     = aws_default_subnet.default_az1.id
   vpc_security_group_ids = [aws_security_group.ec2_sg.id]
 
   tags = {
@@ -142,7 +137,7 @@ resource "aws_instance" "controller_instance" {
 resource "aws_instance" "node_instances" {
   ami           = data.aws_ami.amazon_linux_2.id # replace with your AMI ID
   instance_type = "t2.micro"
-  subnet_id     = aws_subnet.subnet_1b.id
+  subnet_id     = aws_default_subnet.default_az2.id
   vpc_security_group_ids = [aws_security_group.ec2_sg_Nodes.id]
   count = 2
 
@@ -156,8 +151,8 @@ output "ec2_controller_public_ipv4" {
 }
 
 output "ec2_nodes_public_ipv4_1" {
-  value = aws_instance.node_instances[0].private_ip
+  value = aws_instance.node_instances[0].public_ip
 }
 output "ec2_nodes_public_ipv4_2" {
-  value = aws_instance.node_instances[1].private_ip
+  value = aws_instance.node_instances[1].public_ip
 }
