@@ -21,10 +21,25 @@ terraform {
 }
 
 
-data "aws_key_pair" "ansible_labsetup_kp" {
-  key_name           = "ansible_labsetup_kp"
-}
+#data "aws_key_pair" "ansible_labsetup_kp" {
+#  key_name           = "ansible_labsetup_kp"
+#}
 
+#resource "tls_private_key" "sample" {
+#  algorithm = "RSA"
+#  rsa_bits  = 2048
+#}
+#
+#resource "aws_key_pair" "deployer" {
+#  key_name   = "deployer-key"
+#  public_key = tls_private_key.sample.public_key_openssh
+#}
+
+#resource "local_file" "private_key" {
+#  sensitive_content = tls_private_key.example.private_key_pem
+#  filename          = "${path.module}/private_key.pem"
+#  file_permission   = "0600"
+#}
 
 resource "aws_s3_bucket" "terraform_state_bucket" {
   bucket = "tfstate-bucket-observe-with-grafana"
@@ -117,6 +132,48 @@ resource "aws_security_group" "ec2_sg_Nodes" {
   }
 }
 
+locals {
+  cloud_config_config = <<-END
+    #cloud-config
+    ${jsonencode({
+      write_files = [
+        {
+          path        = "home/ec2-user/.ssh/"
+          permissions = "0644"
+          owner       = "ec2-user:ec2-user"
+          encoding    = "b64"
+          content     = filebase64("${path.module}/")
+        },
+      ]
+    })}
+  END
+}
+#
+data "cloudinit_config" "samplecfg" {
+  gzip          = false
+  base64_encode = false
+
+  part {
+    content_type = "text/cloud-config"
+    filename     = "cloud-config.yaml"
+    content      =  local.cloud_config_config
+  }
+
+  part {
+    content_type = "text/x-shellscript"
+    filename     = "setupController.sh"
+    content = file("${path.module}/setupController.sh")
+  }
+  
+}
+#
+resource "local_file" "ansible_inventory" {
+  content = templatefile("inventory.ini", {
+    ip_addrs = [for i in aws_instance.node_instances:i.public_ip]
+  })
+  filename = "inventory.ini"
+}
+
 data "aws_ami" "amazon_linux_2023" {
   most_recent = true
   owners      = ["amazon"]
@@ -143,6 +200,8 @@ resource "aws_instance" "controller_instance" {
   vpc_security_group_ids = [aws_security_group.ec2_sg.id]
   key_name = data.aws_key_pair.ansible_labsetup_kp.key_name
   user_data = file("setupController.sh")
+  #  local.cloud_config_config  data.cloudinit_config.samplecfg.rendered
+  #
   tags = {
     Name = "controller_instance"
   }
@@ -161,6 +220,25 @@ resource "aws_instance" "node_instances" {
   }
 }
 
+
+
+#
+#output "private_key_pem" {
+#  description = "The private key data in PEM format"
+#  value       = tls_private_key.sample.private_key_pem
+#  sensitive = true
+#}
+#
+#output "public_key_pem" {
+#  description = "The public key data in PEM format"
+#  value       = tls_private_key.sample.public_key_pem
+#}
+#
+#output "public_key_openssh" {
+#  description = "The public key data in OpenSSH authorized_keys format"
+#  value       = tls_private_key.sample.public_key_openssh
+#}
+#
 output "ec2_controller_public_ipv4" {
   value = aws_instance.controller_instance.public_ip
 }
